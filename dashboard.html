@@ -947,7 +947,16 @@ function renderTimeToHire() {
     return;
   }
 
-  var data = appData.timeToHireData;
+  var jobType = document.getElementById('job-type-switcher').value;
+  var allTth  = appData.timeToHireData;
+  var data = allTth.filter(function(d) {
+    if (jobType === 'all') return true;
+    if (jobType === 'open')       return d.labelId && appData.openLabelIds.has(d.labelId);
+    if (jobType === 'closed')     return d.labelId && appData.closedLabelIds.has(d.labelId);
+    if (jobType === 'unassigned') return !d.labelId || (!appData.openLabelIds.has(d.labelId) && !appData.closedLabelIds.has(d.labelId));
+    return true;
+  });
+
   if (!data || data.length === 0) {
     listEl.innerHTML = '<p style="padding:20px;color:#6b778c;">No hired candidates found. Make sure cards have been moved through "Published Candidates" and then "Hire".</p>';
     t.sizeTo('#app').catch(function() {});
@@ -1314,10 +1323,11 @@ t.render(function() {
 
             // Get job label (first label on the card)
             var jobLabel = (card.labels && card.labels.length > 0) ? card.labels[0] : null;
-            var job   = jobLabel ? (jobLabel.name || '(no label)') : '(no label)';
-            var color = jobLabel ? (TRELLO_LABEL_COLOURS[jobLabel.color] || COLOUR_NO_LABEL) : COLOUR_UNASSIGNED;
+            var job      = jobLabel ? (jobLabel.name || '(no label)') : '(no label)';
+            var color    = jobLabel ? (TRELLO_LABEL_COLOURS[jobLabel.color] || COLOUR_NO_LABEL) : COLOUR_UNASSIGNED;
+            var labelId  = jobLabel ? jobLabel.id : null;
 
-            tthData.push({ job: job, candidate: card.name, days: days, color: color });
+            tthData.push({ job: job, candidate: card.name, days: days, color: color, labelId: labelId });
           });
 
           appData.timeToHireData  = tthData;
