@@ -184,6 +184,7 @@
           <option value="by-job-and-stage">Candidates per Job and Stage</option>
           <option value="by-member-and-stage">Candidates per Member and Stage</option>
           <option value="hired-vs-remaining">Hired vs. Remaining</option>
+          <option value="time-to-hire">Time to Hire</option>
         </select>
       </div>
     </div>
@@ -917,11 +918,187 @@ function renderHiredVsRemaining() {
   t.sizeTo('#app').catch(function() {});
 }
 
+// ── Time to Hire ──────────────────────────────────────────────────
+function renderTimeToHire() {
+  var chartEl = document.getElementById('chart');
+  var listEl  = document.getElementById('list');
+  chartEl.innerHTML = '';
+  listEl.innerHTML  = '';
+
+  if (!appData.restApiAuthorized) {
+    chartEl.innerHTML = '<p style="padding:20px;color:#6b778c;">This dashboard requires authorization.<br>Click the ⚙️ gear icon on the HR Dashboard Power-Up and select <strong>Authorize Account</strong>.</p>';
+    t.sizeTo('#app').catch(function() {});
+    return;
+  }
+  if (!appData.timeToHireReady) {
+    chartEl.innerHTML = '<p style="padding:20px;color:#6b778c;">⏳ Loading time to hire data…</p>';
+    t.sizeTo('#app').catch(function() {});
+    return;
+  }
+
+  var data = appData.timeToHireData; // [{job, candidate, days, color}]
+  if (!data || data.length === 0) {
+    chartEl.innerHTML = '<p style="padding:20px;color:#6b778c;">No hired candidates found. Make sure cards have been moved through "Published Candidates" and then "Hire".</p>';
+    t.sizeTo('#app').catch(function() {});
+    return;
+  }
+
+  // Collect unique job names in order of first appearance
+  var jobOrder = [];
+  data.forEach(function(d) {
+    if (jobOrder.indexOf(d.job) === -1) jobOrder.push(d.job);
+  });
+  jobOrder.sort();
+
+  // Build beeswarm points: x = job index, y = days
+  // Simple beeswarm: within each job column, spread overlapping points horizontally
+  var radius = 0.18; // in x-axis units
+  var allPoints = [];
+
+  jobOrder.forEach(function(job, ji) {
+    var jobPoints = data
+      .filter(function(d) { return d.job === job; })
+      .map(function(d) { return { baseX: ji, y: d.days, label: d.candidate, color: d.color, job: d.job }; });
+
+    // Sort by y for better packing
+    jobPoints.sort(function(a, b) { return a.y - b.y; });
+
+    // Assign x offsets to avoid overlap
+    var placed = [];
+    jobPoints.forEach(function(p) {
+      var bestX = p.baseX;
+      var found = false;
+      for (var step = 0; step <= 20 && !found; step++) {
+        var candidates = step === 0 ? [p.baseX] : [p.baseX + step * radius, p.baseX - step * radius];
+        for (var ci = 0; ci < candidates.length && !found; ci++) {
+          var tx = candidates[ci];
+          var ok = placed.every(function(q) {
+            var dx = tx - q.x, dy = p.y - q.y;
+            return Math.sqrt(dx * dx + dy * dy) >= radius;
+          });
+          if (ok) { bestX = tx; found = true; }
+        }
+      }
+      placed.push({ x: bestX, y: p.y });
+      allPoints.push({ x: bestX, y: p.y, label: p.label, color: p.color, job: p.job });
+    });
+  });
+
+  // Build Chart.js datasets — one per unique color so dots render correctly
+  var colorMap = {};
+  allPoints.forEach(function(p) {
+    if (!colorMap[p.color]) colorMap[p.color] = [];
+    colorMap[p.color].push(p);
+  });
+
+  var datasets = Object.keys(colorMap).map(function(color) {
+    return {
+      data: colorMap[color].map(function(p) { return { x: p.x, y: p.y, label: p.label, job: p.job }; }),
+      backgroundColor: color,
+      borderColor: color,
+      pointRadius: 7,
+      pointHoverRadius: 9,
+      showLine: false
+    };
+  });
+
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  var canvas = document.createElement('canvas');
+  canvas.height = 320;
+  chartEl.appendChild(canvas);
+
+  chartInstance = new Chart(canvas, {
+    type: 'scatter',
+    data: { datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: function() { return ''; },
+            label: function(ctx) {
+              var raw = ctx.raw;
+              return raw.label + ' (' + raw.job + '): ' + raw.y + ' days';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: -0.8,
+          max: jobOrder.length - 0.2,
+          ticks: {
+            stepSize: 1,
+            callback: function(val) {
+              var i = Math.round(val);
+              if (Math.abs(val - i) < 0.01 && jobOrder[i] !== undefined) {
+                var name = jobOrder[i];
+                return name.length > 14 ? name.substring(0, 13) + '…' : name;
+              }
+              return '';
+            },
+            maxRotation: 30,
+            font: { size: 11 }
+          },
+          grid: { display: false }
+        },
+        y: {
+          title: { display: true, text: 'Days to Hire', font: { size: 12 } },
+          beginAtZero: true,
+          ticks: { font: { size: 11 } }
+        }
+      }
+    }
+  });
+
+  // ── Table ──
+  var table = document.createElement('table');
+  table.style.cssText = 'width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;';
+  var thead = document.createElement('thead');
+  thead.innerHTML = '<tr style="background:#f4f5f7;">' +
+    '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dfe1e6;">Job</th>' +
+    '<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #dfe1e6;">Candidate</th>' +
+    '<th style="padding:8px 10px;text-align:right;border-bottom:2px solid #dfe1e6;">Days to Hire</th>' +
+    '</tr>';
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  // Sort by job then days
+  var sorted = data.slice().sort(function(a, b) {
+    return a.job < b.job ? -1 : a.job > b.job ? 1 : a.days - b.days;
+  });
+  sorted.forEach(function(row, i) {
+    var tr = document.createElement('tr');
+    tr.style.background = i % 2 === 0 ? '#fff' : '#f9fafb';
+    var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + row.color + ';margin-right:6px;vertical-align:middle;"></span>';
+    tr.innerHTML =
+      '<td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">' + dot + escHtml(row.job) + '</td>' +
+      '<td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">' + escHtml(row.candidate) + '</td>' +
+      '<td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;text-align:right;">' + row.days + '</td>';
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  listEl.appendChild(table);
+  t.sizeTo('#app').catch(function() {});
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function switchDashboard(view, jobType) {
   if (!appData) return;
   jobType = jobType || document.getElementById('job-type-switcher').value;
   if (view === 'hired-vs-remaining') {
     renderHiredVsRemaining();
+    return;
+  }
+  if (view === 'time-to-hire') {
+    renderTimeToHire();
     return;
   }
   var cards = filterCandidateCards(jobType);
@@ -997,7 +1174,9 @@ t.render(function() {
       boardMembers:       board.members || [],
       restApiAuthorized:  false,
       customFieldsReady:  false,
-      customFieldData:    {}
+      customFieldData:    {},
+      timeToHireReady:    false,
+      timeToHireData:     []
     };
 
     renderDashboard(buildByJob(filterCandidateCards('open')));
@@ -1075,6 +1254,78 @@ t.render(function() {
         if (document.getElementById('dashboard-switcher').value === 'hired-vs-remaining') {
           renderHiredVsRemaining();
         }
+
+        // ── Time to Hire: fetch action history for each card in "Hire" list ──
+        var hireList = lists.find(function(l) { return l.name.trim().toLowerCase() === 'hire'; });
+        if (!hireList) {
+          appData.timeToHireReady = true;
+          if (document.getElementById('dashboard-switcher').value === 'time-to-hire') renderTimeToHire();
+          return;
+        }
+
+        var hireCards = allCards.filter(function(c) { return c.idList === hireList.id; });
+        if (hireCards.length === 0) {
+          appData.timeToHireReady = true;
+          if (document.getElementById('dashboard-switcher').value === 'time-to-hire') renderTimeToHire();
+          return;
+        }
+
+        return Promise.all(
+          hireCards.map(function(card) {
+            return apiFetch('/1/cards/' + card.id + '/actions?filter=updateCard:idList,createCard')
+              .then(function(actions) { return { card: card, actions: actions }; });
+          })
+        ).then(function(results) {
+          var tthData = [];
+
+          results.forEach(function(r) {
+            var card    = r.card;
+            var actions = r.actions; // newest first
+
+            // Find timestamp when card entered "Published Candidates"
+            var pubTs = null;
+            // Find timestamp when card entered "Hire"
+            var hireTs = null;
+
+            actions.forEach(function(a) {
+              var d = a.data || {};
+              var listAfter  = (d.listAfter  || {}).name || '';
+              var listBefore = (d.listBefore || {}).name || '';
+              var listName   = (d.list       || {}).name || ''; // createCard
+
+              var ts = new Date(a.date).getTime();
+
+              if (listAfter.trim().toLowerCase() === 'hire' && hireTs === null) {
+                hireTs = ts;
+              }
+              // Published Candidates — take the EARLIEST occurrence
+              if (
+                listAfter.trim().toLowerCase()  === 'published candidates' ||
+                listName.trim().toLowerCase()   === 'published candidates'
+              ) {
+                if (pubTs === null || ts < pubTs) pubTs = ts;
+              }
+            });
+
+            if (pubTs === null || hireTs === null) return; // can't compute
+            var days = Math.round((hireTs - pubTs) / (1000 * 60 * 60 * 24));
+            if (days < 0) days = Math.abs(days); // guard against data oddities
+
+            // Get job label (first label on the card)
+            var jobLabel = (card.labels && card.labels.length > 0) ? card.labels[0] : null;
+            var job   = jobLabel ? (jobLabel.name || '(no label)') : '(no label)';
+            var color = jobLabel ? (TRELLO_LABEL_COLOURS[jobLabel.color] || COLOUR_NO_LABEL) : COLOUR_UNASSIGNED;
+
+            tthData.push({ job: job, candidate: card.name, days: days, color: color });
+          });
+
+          appData.timeToHireData  = tthData;
+          appData.timeToHireReady = true;
+
+          if (document.getElementById('dashboard-switcher').value === 'time-to-hire') {
+            renderTimeToHire();
+          }
+        });
       });
       }); // end getToken
     }).catch(function(err) {
