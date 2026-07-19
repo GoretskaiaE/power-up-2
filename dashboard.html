@@ -237,7 +237,7 @@
    Job type filter applies to all dashboards.
 ============================================ */
 
-var EXCLUDED_LISTS = ['clients', 'open jobs', 'closed jobs'];
+var EXCLUDED_LISTS = ['clients', 'open jobs', 'closed jobs', '<spacer>'];
 
 var COLOURS = [
   '#0052cc', '#00875a', '#ff5630', '#ff8b00',
@@ -418,7 +418,7 @@ function renderDashboard(config) {
     row.innerHTML =
       '<div class="item-name">' +
         '<div class="color-dot" style="background:' + barColours[i] + '"></div>' +
-        '<span>' + name + '</span>' +
+        '<span>' + escHtml(name) + '</span>' +
       '</div>' +
       '<span class="item-count">' + config.groups[name] + '</span>';
     listEl.appendChild(row);
@@ -907,7 +907,7 @@ function renderHiredVsRemaining() {
     var tr = document.createElement('tr');
     tr.style.background = i % 2 === 0 ? '#f8f9fc' : '#ffffff';
     var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + jobColors[name] + ';margin-right:6px;vertical-align:middle;"></span>';
-    [[dot + name,'left',true],[totals[i],'center',false],[hired[i],'center',false],[remaining[i],'center',false]].forEach(function(cell) {
+    [[dot + escHtml(name),'left',true],[totals[i],'center',false],[hired[i],'center',false],[remaining[i],'center',false]].forEach(function(cell) {
       var td = document.createElement('td');
       td.style.cssText = 'padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:' + cell[1] + ';';
       if (cell[2]) { td.innerHTML = cell[0]; } else { td.textContent = cell[0]; }

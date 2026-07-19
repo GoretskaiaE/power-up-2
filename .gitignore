@@ -1,0 +1,8 @@
+# Claude Code skills (installed by OpenSpec)
+.claude/
+
+# OpenSpec workspace
+openspec/
+
+# Editor / OS
+.DS_Store
