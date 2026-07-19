@@ -371,19 +371,45 @@ function renderDashboard(config) {
 
   // Draw chart
   var ctx = document.getElementById('myChart').getContext('2d');
+
+  // With hired data (Candidates per Job): stacked bars — striped "Hired"
+  // segment at the bottom (same style as Hired vs. Remaining), solid
+  // "Remaining" segment on top. Without it: single solid bars as before.
+  var withHired = !!config.groupHired;
+  var datasets, tooltipLabel;
+  if (withHired) {
+    var hiredVals     = groupNames.map(function(n) { return config.groupHired[n] || 0; });
+    var remainingVals = groupNames.map(function(n, i) { return groupValues[i] - (config.groupHired[n] || 0); });
+    var hiredBg = groupNames.map(function(n, i) {
+      return ctx.createPattern(makeStripeCanvas(barColours[i], 'fwd'), 'repeat');
+    });
+    datasets = [
+      { label: 'Hired',     data: hiredVals,     backgroundColor: hiredBg,                                                 borderColor: barColours, borderWidth: 2, borderSkipped: false },
+      { label: 'Remaining', data: remainingVals, backgroundColor: barColours.map(function(c) { return c + 'cc'; }),        borderColor: barColours, borderWidth: 2, borderSkipped: false }
+    ];
+    tooltipLabel = function(tt) {
+      return ' ' + (config.groupHired[tt.label] || 0) + ' of ' + (config.groups[tt.label] || 0);
+    };
+  } else {
+    datasets = [{
+      label: 'Candidates',
+      data: groupValues,
+      backgroundColor: barColours.map(function(c) { return c + 'cc'; }),
+      borderColor: barColours,
+      borderWidth: 2,
+      borderRadius: 6,
+      borderSkipped: false
+    }];
+    tooltipLabel = function(tt) {
+      return ' ' + tt.parsed.y + ' candidate' + (tt.parsed.y !== 1 ? 's' : '');
+    };
+  }
+
   chartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: groupNames,
-      datasets: [{
-        label: 'Candidates',
-        data: groupValues,
-        backgroundColor: barColours.map(function(c) { return c + 'cc'; }),
-        borderColor: barColours,
-        borderWidth: 2,
-        borderRadius: 6,
-        borderSkipped: false
-      }]
+      datasets: datasets
     },
     options: {
       responsive:          true,
@@ -392,19 +418,18 @@ function renderDashboard(config) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: function(ctx) {
-              return ' ' + ctx.parsed.y + ' candidate' + (ctx.parsed.y !== 1 ? 's' : '');
-            }
+            label: tooltipLabel
           }
         }
       },
       scales: {
         y: {
+          stacked: withHired,
           beginAtZero: true,
           ticks: { stepSize: 1, precision: 0 },
           grid: { color: '#f0f0f0' }
         },
-        x: { grid: { display: false } }
+        x: { stacked: withHired, grid: { display: false } }
       }
     }
   });
@@ -412,17 +437,51 @@ function renderDashboard(config) {
   // Build list below chart
   var listEl = document.getElementById('item-list');
   listEl.innerHTML = '';
-  groupNames.forEach(function(name, i) {
-    var row = document.createElement('div');
-    row.className = 'item-row';
-    row.innerHTML =
-      '<div class="item-name">' +
-        '<div class="color-dot" style="background:' + barColours[i] + '"></div>' +
-        '<span>' + escHtml(name) + '</span>' +
-      '</div>' +
-      '<span class="item-count">' + config.groups[name] + '</span>';
-    listEl.appendChild(row);
-  });
+
+  if (withHired) {
+    // Summary table, same layout as "Hired vs. Remaining"
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;';
+    var thead = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    [['Job','left'],['Total','center'],['Hired','center'],['Remaining','center']].forEach(function(col) {
+      var th = document.createElement('th');
+      th.style.cssText = 'text-align:' + col[1] + ';padding:6px 8px;border-bottom:2px solid #dfe1e6;color:#6b778c;font-weight:600;';
+      th.textContent = col[0];
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    groupNames.forEach(function(name, i) {
+      var jobTotal = config.groups[name] || 0;
+      var jobHired = config.groupHired[name] || 0;
+      var tr = document.createElement('tr');
+      tr.style.background = i % 2 === 0 ? '#f8f9fc' : '#ffffff';
+      var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + barColours[i] + ';margin-right:6px;vertical-align:middle;"></span>';
+      [[dot + escHtml(name),'left',true],[jobTotal,'center',false],[jobHired,'center',false],[jobTotal - jobHired,'center',false]].forEach(function(cell) {
+        var td = document.createElement('td');
+        td.style.cssText = 'padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:' + cell[1] + ';';
+        if (cell[2]) { td.innerHTML = cell[0]; } else { td.textContent = cell[0]; }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    listEl.appendChild(table);
+  } else {
+    groupNames.forEach(function(name, i) {
+      var row = document.createElement('div');
+      row.className = 'item-row';
+      row.innerHTML =
+        '<div class="item-name">' +
+          '<div class="color-dot" style="background:' + barColours[i] + '"></div>' +
+          '<span>' + escHtml(name) + '</span>' +
+        '</div>' +
+        '<span class="item-count">' + config.groups[name] + '</span>';
+      listEl.appendChild(row);
+    });
+  }
 
   t.sizeTo('#app').catch(function() {});
 }
@@ -430,6 +489,7 @@ function renderDashboard(config) {
 // ── Dashboard: Candidates per Job (grouped by label) ──────────────
 function buildByJob(candidateCards) {
   var groups      = {};
+  var groupHired  = {};
   var groupColors = {};
 
   var jobType = document.getElementById('job-type-switcher').value;
@@ -451,17 +511,20 @@ function buildByJob(candidateCards) {
   });
 
   candidateCards.forEach(function(card) {
+    var isHired = appData.hireListId !== null && card.idList === appData.hireListId;
     if (card.labels && card.labels.length > 0) {
       card.labels.forEach(function(label) {
         var name  = label.name || ('(no name - ' + label.color + ')');
         var color = label.color;
         groups[name] = (groups[name] || 0) + 1;
+        if (isHired) groupHired[name] = (groupHired[name] || 0) + 1;
         if (!groupColors[name]) {
           groupColors[name] = color ? (TRELLO_LABEL_COLOURS[color] || COLOUR_NO_LABEL) : COLOUR_NO_LABEL;
         }
       });
     } else {
-      groups['Unassigned']      = (groups['Unassigned'] || 0) + 1;
+      groups['Unassigned'] = (groups['Unassigned'] || 0) + 1;
+      if (isHired) groupHired['Unassigned'] = (groupHired['Unassigned'] || 0) + 1;
       groupColors['Unassigned'] = COLOUR_UNASSIGNED;
     }
   });
@@ -472,6 +535,7 @@ function buildByJob(candidateCards) {
     groupsLabel: 'Open Jobs',
     totalCards:  candidateCards.length,
     groups:      groups,
+    groupHired:  groupHired,
     groupColors: groupColors
   };
 }
@@ -1549,8 +1613,14 @@ t.render(function() {
 
     var allCandidateCards = allCards.filter(function(c) { return !excludedIds.has(c.idList); });
 
+    var hiredList = lists.find(function(l) {
+      var n = l.name.trim().toLowerCase();
+      return n === 'hire' || n === 'hired';
+    });
+
     appData = {
       allCandidateCards:  allCandidateCards,
+      hireListId:         hiredList ? hiredList.id : null,
       listsMap:           listsMap,
       openLabelIds:       openLabelIds,
       closedLabelIds:     closedLabelIds,
