@@ -1583,10 +1583,21 @@ t.render(function() {
         var key  = 'd9abb67834303f2caf672c5c7bfb0347';
         var base = 'https://api.trello.com';
 
-        function apiFetch(path) {
+        function apiFetch(path, attempt) {
           var sep = path.indexOf('?') === -1 ? '?' : '&';
           var url = base + path + sep + 'key=' + key + '&token=' + token;
           return fetch(url).then(function(r) {
+            if (r.status === 429) {
+              // Rate limited — wait (Retry-After if readable, else backoff) and retry
+              attempt = attempt || 0;
+              if (attempt >= 4) throw new Error('Trello API 429: rate limit exceeded');
+              var retryAfter = parseFloat(r.headers.get('Retry-After'));
+              var waitMs = !isNaN(retryAfter)
+                ? retryAfter * 1000
+                : Math.min(1000 * Math.pow(2, attempt + 1), 10000);
+              return new Promise(function(resolve) { setTimeout(resolve, waitMs); })
+                .then(function() { return apiFetch(path, attempt + 1); });
+            }
             if (!r.ok) {
               return r.text().then(function(txt) {
                 throw new Error('Trello API ' + r.status + ': ' + txt);
@@ -1594,6 +1605,32 @@ t.render(function() {
             }
             return r.json();
           });
+        }
+
+        // Run promise-returning tasks a few at a time to stay under Trello's
+        // rate limit (~100 requests / 10 s per token)
+        function runLimited(tasks, limit) {
+          var results = new Array(tasks.length);
+          var next = 0;
+          function worker() {
+            if (next >= tasks.length) return Promise.resolve();
+            var i = next++;
+            return tasks[i]().then(function(res) { results[i] = res; }).then(worker);
+          }
+          var workers = [];
+          for (var w = 0; w < Math.min(limit, tasks.length); w++) workers.push(worker());
+          return Promise.all(workers).then(function() { return results; });
+        }
+
+        // Per-card action fetch that never rejects: a card whose history can't
+        // be loaded is skipped instead of breaking the whole dashboard
+        function fetchCardActions(card, filter) {
+          return apiFetch('/1/cards/' + card.id + '/actions?filter=' + filter)
+            .then(function(actions) { return { card: card, actions: actions }; })
+            .catch(function(err) {
+              console.warn('HR Dashboard: could not load actions for card "' + card.name + '" -', err);
+              return { card: card, actions: [] };
+            });
         }
 
         return Promise.all([
@@ -1649,12 +1686,11 @@ t.render(function() {
           var hireList  = lists.find(function(l) { return l.name.trim().toLowerCase() === 'hire'; });
           var hireCards = hireList ? allCards.filter(function(c) { return c.idList === hireList.id; }) : [];
 
-          var tthPromise = hireCards.length === 0
-            ? Promise.resolve([])
-            : Promise.all(hireCards.map(function(card) {
-                return apiFetch('/1/cards/' + card.id + '/actions?filter=updateCard:idList,createCard')
-                  .then(function(actions) { return { card: card, actions: actions }; });
-              }));
+          var tthPromise = runLimited(hireCards.map(function(card) {
+            return function() {
+              return fetchCardActions(card, 'updateCard:idList,createCard');
+            };
+          }), 3);
 
           // ── Risk Alerts card actions ───────────────────────────
           var pubIdx  = lists.findIndex(function(l) { return l.name.trim().toLowerCase() === 'published candidates'; });
@@ -1666,12 +1702,11 @@ t.render(function() {
 
           var pipelineCards = allCards.filter(function(c) { return stageListIds.has(c.idList); });
 
-          var raPromise = pipelineCards.length === 0
-            ? Promise.resolve([])
-            : Promise.all(pipelineCards.map(function(card) {
-                return apiFetch('/1/cards/' + card.id + '/actions?filter=updateCard:idList,createCard,commentCard,addMemberToCard,updateCard:due&limit=100')
-                  .then(function(actions) { return { card: card, actions: actions }; });
-              }));
+          var raPromise = runLimited(pipelineCards.map(function(card) {
+            return function() {
+              return fetchCardActions(card, 'updateCard:idList,createCard,commentCard,addMemberToCard,updateCard:due&limit=100');
+            };
+          }), 3);
 
           // ── Process both in parallel ───────────────────────────
           return Promise.all([tthPromise, raPromise]).then(function(both) {
