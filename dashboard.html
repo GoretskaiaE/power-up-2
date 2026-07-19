@@ -333,6 +333,13 @@ function filterCandidateCards(jobType) {
   return all;
 }
 
+// "Need to hire" for a job = the job card's "Total" custom field.
+// Loaded async via REST; null until available (or if unauthorized/missing).
+function needToHireFor(jobName) {
+  var cf = appData && appData.customFieldData ? appData.customFieldData[jobName] : null;
+  return cf && cf.total !== null && cf.total !== undefined ? cf.total : null;
+}
+
 function showError(msg) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('app').style.display     = 'none';
@@ -388,7 +395,13 @@ function renderDashboard(config) {
       { label: 'Remaining', data: remainingVals, backgroundColor: barColours.map(function(c) { return c + 'cc'; }),        borderColor: barColours, borderWidth: 2, borderSkipped: false }
     ];
     tooltipLabel = function(tt) {
-      return ' ' + (config.groupHired[tt.label] || 0) + ' of ' + (config.groups[tt.label] || 0);
+      var name = tt.label;
+      if (tt.dataset.label === 'Hired') {
+        var need = needToHireFor(name);
+        return ' ' + (config.groupHired[name] || 0) + ' of ' + (need === null ? '—' : need);
+      }
+      // Solid-square line: total candidates for the job
+      return ' ' + (config.groups[name] || 0);
     };
   } else {
     datasets = [{
@@ -416,11 +429,15 @@ function renderDashboard(config) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: tooltipLabel
-          }
-        }
+        tooltip: withHired
+          ? {
+              // Show both lines per bar: solid square + total first,
+              // striped square + "hired of need-to-hire" second
+              mode: 'index',
+              itemSort: function(a, b) { return b.datasetIndex - a.datasetIndex; },
+              callbacks: { label: tooltipLabel }
+            }
+          : { callbacks: { label: tooltipLabel } }
       },
       scales: {
         y: {
@@ -444,7 +461,7 @@ function renderDashboard(config) {
     table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;';
     var thead = document.createElement('thead');
     var headRow = document.createElement('tr');
-    [['Job','left'],['Total','center'],['Hired','center'],['Remaining','center']].forEach(function(col) {
+    [['Job','left'],['Total','center'],['Hired','center']].forEach(function(col) {
       var th = document.createElement('th');
       th.style.cssText = 'text-align:' + col[1] + ';padding:6px 8px;border-bottom:2px solid #dfe1e6;color:#6b778c;font-weight:600;';
       th.textContent = col[0];
@@ -454,12 +471,14 @@ function renderDashboard(config) {
     table.appendChild(thead);
     var tbody = document.createElement('tbody');
     groupNames.forEach(function(name, i) {
-      var jobTotal = config.groups[name] || 0;
-      var jobHired = config.groupHired[name] || 0;
+      var jobTotal  = config.groups[name] || 0;
+      var jobHired  = config.groupHired[name] || 0;
+      var need      = needToHireFor(name);
+      var hiredText = jobHired + ' of ' + (need === null ? '—' : need);
       var tr = document.createElement('tr');
       tr.style.background = i % 2 === 0 ? '#f8f9fc' : '#ffffff';
       var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + barColours[i] + ';margin-right:6px;vertical-align:middle;"></span>';
-      [[dot + escHtml(name),'left',true],[jobTotal,'center',false],[jobHired,'center',false],[jobTotal - jobHired,'center',false]].forEach(function(cell) {
+      [[dot + escHtml(name),'left',true],[jobTotal,'center',false],[hiredText,'center',false]].forEach(function(cell) {
         var td = document.createElement('td');
         td.style.cssText = 'padding:6px 8px;border-bottom:1px solid #f0f0f0;text-align:' + cell[1] + ';';
         if (cell[2]) { td.innerHTML = cell[0]; } else { td.textContent = cell[0]; }
@@ -1750,6 +1769,9 @@ t.render(function() {
           }
           if (document.getElementById('dashboard-switcher').value === 'expected-hires') {
             renderExpectedHires();
+          }
+          if (document.getElementById('dashboard-switcher').value === 'by-job') {
+            switchDashboard('by-job');
           }
 
           // ── Time to Hire card actions ──────────────────────────
