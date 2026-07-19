@@ -519,7 +519,12 @@ function buildByJobAndStage(candidateCards, listsMap) {
     if (name && !jobSet[name]) { jobSet[name] = true; jobNames.push(name); }
   });
 
-  // First pass: collect jobs and stages from actual cards
+  // Stages in board list order (includes stages with 0 cards)
+  Object.values(listsMap).forEach(function(stageName) {
+    if (!stageSet[stageName]) { stageSet[stageName] = true; stageNames.push(stageName); }
+  });
+
+  // First pass: collect jobs from actual cards
   candidateCards.forEach(function(card) {
     var stageName = listsMap[card.idList] || 'Unknown';
     if (!stageSet[stageName]) { stageSet[stageName] = true; stageNames.push(stageName); }
@@ -532,11 +537,6 @@ function buildByJobAndStage(candidateCards, listsMap) {
       var jobName = label.name || ('(no name - ' + label.color + ')');
       if (!jobSet[jobName]) { jobSet[jobName] = true; jobNames.push(jobName); }
     });
-  });
-
-  // Also include stages that have 0 cards (from listsMap)
-  Object.values(listsMap).forEach(function(stageName) {
-    if (!stageSet[stageName]) { stageSet[stageName] = true; stageNames.push(stageName); }
   });
 
   // Build counts: counts[jobName][stageName] = n
@@ -582,7 +582,12 @@ function buildByMemberAndStage(candidateCards, listsMap) {
     if (!memberSet[name]) { memberSet[name] = true; memberNames.push(name); }
   });
 
-  // First pass: collect stages and any members not on the board list
+  // Stages in board list order (includes stages with 0 cards)
+  Object.values(listsMap).forEach(function(stageName) {
+    if (!stageSet[stageName]) { stageSet[stageName] = true; stageNames.push(stageName); }
+  });
+
+  // First pass: collect any members not on the board list
   candidateCards.forEach(function(card) {
     var stageName = listsMap[card.idList] || 'Unknown';
     if (!stageSet[stageName]) { stageSet[stageName] = true; stageNames.push(stageName); }
@@ -595,11 +600,6 @@ function buildByMemberAndStage(candidateCards, listsMap) {
       var name = m.fullName || m.username || 'Unassigned';
       if (!memberSet[name]) { memberSet[name] = true; memberNames.push(name); }
     });
-  });
-
-  // Include all non-excluded stages even if 0 cards
-  Object.values(listsMap).forEach(function(stageName) {
-    if (!stageSet[stageName]) { stageSet[stageName] = true; stageNames.push(stageName); }
   });
 
   // Build counts matrix
@@ -701,15 +701,19 @@ function renderStackedDashboard(config) {
   var listEl = document.getElementById('item-list');
   listEl.innerHTML = '';
 
+  // Wrapper provides horizontal scrolling; first column stays fixed via position:sticky
+  var scrollWrap = document.createElement('div');
+  scrollWrap.style.cssText = 'overflow-x:auto;margin-top:8px;';
+
   var table = document.createElement('table');
-  table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;';
+  table.style.cssText = 'width:100%;border-collapse:separate;border-spacing:0;font-size:12px;';
 
   // Header row: empty corner + one column per stage
   var thead = document.createElement('thead');
   var headRow = document.createElement('tr');
 
   var cornerTh = document.createElement('th');
-  cornerTh.style.cssText = 'text-align:left;padding:6px 8px;border-bottom:2px solid #dfe1e6;color:#6b778c;font-weight:600;white-space:nowrap;';
+  cornerTh.style.cssText = 'text-align:left;padding:6px 8px;border-bottom:2px solid #dfe1e6;color:#6b778c;font-weight:600;white-space:nowrap;position:sticky;left:0;z-index:1;background:#fff;';
   cornerTh.textContent = (config.groupsLabel || 'Job') + ' / Stage';
   headRow.appendChild(cornerTh);
 
@@ -737,7 +741,7 @@ function renderStackedDashboard(config) {
     tr.style.background = rowIdx % 2 === 0 ? '#f8f9fc' : '#ffffff';
 
     var jobTd = document.createElement('td');
-    jobTd.style.cssText = 'padding:6px 8px;font-weight:600;color:#172b4d;white-space:nowrap;border-bottom:1px solid #f0f0f0;';
+    jobTd.style.cssText = 'padding:6px 8px;font-weight:600;color:#172b4d;white-space:nowrap;border-bottom:1px solid #f0f0f0;position:sticky;left:0;z-index:1;background:' + (rowIdx % 2 === 0 ? '#f8f9fc' : '#ffffff') + ';';
     jobTd.textContent = job;
     tr.appendChild(jobTd);
 
@@ -765,7 +769,7 @@ function renderStackedDashboard(config) {
   footRow.style.background = '#f0f0f0';
 
   var footLabelTd = document.createElement('td');
-  footLabelTd.style.cssText = 'padding:6px 8px;font-weight:700;color:#172b4d;border-top:2px solid #dfe1e6;';
+  footLabelTd.style.cssText = 'padding:6px 8px;font-weight:700;color:#172b4d;border-top:2px solid #dfe1e6;position:sticky;left:0;z-index:1;background:#f0f0f0;';
   footLabelTd.textContent = 'Total';
   footRow.appendChild(footLabelTd);
 
@@ -788,7 +792,8 @@ function renderStackedDashboard(config) {
 
   tbody.appendChild(footRow);
   table.appendChild(tbody);
-  listEl.appendChild(table);
+  scrollWrap.appendChild(table);
+  listEl.appendChild(scrollWrap);
 
   t.sizeTo('#app').catch(function() {});
 }
