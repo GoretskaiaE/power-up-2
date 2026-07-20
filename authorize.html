@@ -122,15 +122,29 @@
     statusEl.textContent = '';
     statusEl.classList.remove('error');
 
-    // authorize() resolves even when the user clicks "Deny" in this Trello
-    // version, so its resolution is NOT proof of success — confirm with
-    // isAuthorized() (checks that a token was actually stored).
-    t.getRestApi().authorize({ scope: 'read', expiration: '1hour' })
+    var restApi = t.getRestApi();
+    var key     = 'd9abb67834303f2caf672c5c7bfb0347';
+
+    // Clear any previously stored token FIRST so the result reflects only this
+    // attempt (authorize() resolves even on "Deny").
+    restApi.clearToken()
       .then(function() {
-        return t.getRestApi().isAuthorized();
+        return restApi.authorize({ scope: 'read', expiration: '1hour' });
       })
-      .then(function(isAuthorized) {
-        if (isAuthorized) {
+      .then(function() {
+        return restApi.getToken();
+      })
+      .then(function(token) {
+        // isAuthorized() only checks the LOCAL token store, which can read as
+        // "authorized" even when the server granted nothing (e.g. after Deny),
+        // which is why Settings → Applications shows no token. Validate the
+        // token against the server so the banner matches reality.
+        if (!token) return false;
+        return fetch('https://api.trello.com/1/members/me?fields=id&key=' + key + '&token=' + token)
+          .then(function(r) { return r.ok; });
+      })
+      .then(function(valid) {
+        if (valid) {
           showAuthorized();
         } else {
           showDenied('❌ Authorization was denied. Please try again.');
