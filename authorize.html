@@ -61,26 +61,28 @@
     appName: 'HR Dashboard 2.2'
   });
 
-  var btn    = document.getElementById('auth-btn');
-  var status = document.getElementById('status');
+  // NB: don't name this `status` — at global scope `var status` aliases
+  // window.status, which coerces to a string, so it wouldn't be the element.
+  var btn      = document.getElementById('auth-btn');
+  var statusEl = document.getElementById('status');
 
   btn.addEventListener('click', function() {
     btn.textContent    = 'Authorizing…';
     btn.disabled       = true;
-    status.textContent = '';
+    statusEl.textContent = '';
 
     // t.getRestApi() returns the object directly — call .authorize() on it
     t.getRestApi().authorize({ scope: 'read', expiration: '1hour' })
       .then(function() {
-        // Authorization complete. We don't call t.closePopup() — the authorize
-        // flow leaves this popover without a context to close, which throws
-        // "No popover in context". Just hide the button; the user dismisses
-        // the popup by clicking outside it.
+        // Trello auto-closes this popover once the OAuth flow completes, so
+        // this message is usually not seen (and t.closePopup() would throw
+        // "No popover in context"). Kept as a fallback for environments where
+        // the popover happens to stay open.
         btn.style.display  = 'none';
-        status.textContent = '✅ Authorized! You can close this window.';
+        statusEl.textContent = '✅ Authorized! You can close this window.';
       })
       .catch(function(err) {
-        status.textContent = '❌ Authorization failed. Please try again.';
+        statusEl.textContent = '❌ Authorization failed. Please try again.';
         btn.textContent    = 'Authorize with Trello';
         btn.disabled       = false;
         console.error(err);
