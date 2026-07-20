@@ -61,21 +61,11 @@
     appName: 'HR Dashboard 2.2'
   });
 
-  var authorized = false;
-
-  // t.render() registers this iframe's popup context with Trello. Without it,
-  // t.closePopup() throws "No popover in context. Are you using the correct t?"
   t.render(function() {
     var btn    = document.getElementById('auth-btn');
     var status = document.getElementById('status');
 
     btn.addEventListener('click', function() {
-      // Once authorized the button becomes "Done" — clicking it closes the popup
-      if (authorized) {
-        t.closePopup().catch(function() {});
-        return;
-      }
-
       btn.textContent    = 'Authorizing…';
       btn.disabled       = true;
       status.textContent = '';
@@ -83,15 +73,11 @@
       // t.getRestApi() returns the object directly — call .authorize() on it
       t.getRestApi().authorize({ scope: 'read', expiration: '1hour' })
         .then(function() {
-          authorized         = true;
-          status.textContent = '✅ Authorized!';
-          // Close automatically. If the auth flow already tore down the popover
-          // context, fall back to a manual "Done" button.
-          t.closePopup().catch(function() {
-            status.textContent = '✅ Authorized! You can close this window.';
-            btn.textContent    = 'Done';
-            btn.disabled       = false;
-          });
+          // The authorize flow tears down this popover's context, so
+          // t.closePopup() can't work here — just hide the button and let
+          // the user dismiss the popup by clicking outside it.
+          btn.style.display  = 'none';
+          status.textContent = '✅ Authorized! You can close this window.';
         })
         .catch(function(err) {
           status.textContent = '❌ Authorization failed. Please try again.';
