@@ -90,17 +90,17 @@
 </div>
 
 <script>
-  var t = window.TrelloPowerUp.iframe({
+  const t = window.TrelloPowerUp.iframe({
     appKey:  'd9abb67834303f2caf672c5c7bfb0347',
     appName: 'HR Dashboard 2.2'
   });
 
-  // NB: don't name this `status` — at global scope `var status` aliases
-  // window.status, which coerces to a string, so it wouldn't be the element.
-  var btn      = document.getElementById('auth-btn');
-  var statusEl = document.getElementById('status');
-  var banner   = document.getElementById('banner');
-  var intro    = document.getElementById('intro');
+  // Named statusEl, not status: a global `status` binding shadows/clashes with
+  // window.status (a string property), which bit us when this was a `var`.
+  const btn      = document.getElementById('auth-btn');
+  const statusEl = document.getElementById('status');
+  const banner   = document.getElementById('banner');
+  const intro    = document.getElementById('intro');
 
   function showAuthorized() {
     intro.style.display  = 'none';
@@ -122,8 +122,8 @@
     statusEl.textContent = '';
     statusEl.classList.remove('error');
 
-    var restApi = t.getRestApi();
-    var key     = 'd9abb67834303f2caf672c5c7bfb0347';
+    const restApi = t.getRestApi();
+    const key     = 'd9abb67834303f2caf672c5c7bfb0347';
 
     // Clear any previously stored token FIRST so the result reflects only this
     // attempt (authorize() resolves even on "Deny").
