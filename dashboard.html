@@ -1689,7 +1689,14 @@ t.render(function() {
             }
             if (!r.ok) {
               return r.text().then(function(txt) {
-                throw new Error('Trello API ' + r.status + ': ' + txt);
+                var err = new Error('Trello API ' + r.status + ': ' + txt);
+                // 401 = token missing/revoked; 400 "invalid token" = same.
+                // isAuthorized() only checks local storage, so a token revoked
+                // server-side still reads as authorized until a call actually fails.
+                if (r.status === 401 || (r.status === 400 && /invalid token/i.test(txt))) {
+                  err.isAuthError = true;
+                }
+                throw err;
               });
             }
             return r.json();
@@ -1892,6 +1899,16 @@ t.render(function() {
       }); // end getToken
     }).catch(function(err) {
       console.warn('HR Dashboard: custom fields not loaded -', err);
+      // A revoked/expired token throws mid-fetch while restApiAuthorized is
+      // still true. Flip it so the REST-backed dashboards drop their stale
+      // "Loading…" state and show the reauthorize prompt instead.
+      if (err && err.isAuthError) {
+        appData.restApiAuthorized = false;
+      }
+      appData.customFieldsReady = false;
+      appData.timeToHireReady   = false;
+      appData.riskAlertsReady   = false;
+      switchDashboard(document.getElementById('dashboard-switcher').value);
     });
   })
   .catch(function(err) {
